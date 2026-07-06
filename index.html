@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>习思想题库刷题</title>
+    <link rel="stylesheet" href="./刷题网页.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-main">
+        <h1>习思想题库刷题</h1>
+        <p id="bankMeta">正在加载题库...</p>
+        <label class="bank-picker">
+          <span>当前题库</span>
+          <select id="bankSelect" aria-label="选择题库"></select>
+        </label>
+        <div class="paper-mode" aria-label="组卷模式">
+          <span>组卷模式</span>
+          <div class="mode-segment" role="group" aria-label="选择组卷模式">
+            <button id="practiceModeBtn" type="button" class="active" data-paper-mode="practice">练习 15+25</button>
+            <button id="examModeBtn" type="button" data-paper-mode="exam">考试 80+20</button>
+          </div>
+        </div>
+      </div>
+      <div class="toolbar" aria-label="刷题控制">
+        <button id="bankViewBtn" type="button" class="button secondary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+          全部题库
+        </button>
+        <button id="newPaperBtn" type="button" class="button secondary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg>
+          重新组卷
+        </button>
+        <button id="checkBtn" type="button" class="button primary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+          交卷判分
+        </button>
+        <button id="answerBtn" type="button" class="button secondary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          显示答案
+        </button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="summary-panel" aria-label="答题概览">
+        <div class="score-box">
+          <span id="scoreLabel" class="score-label">本轮得分</span>
+          <strong id="scoreValue">-- / 40</strong>
+        </div>
+        <div class="stat-grid">
+          <div><span>单选</span><strong id="singleCount">15</strong></div>
+          <div><span>多选</span><strong id="multipleCount">25</strong></div>
+          <div><span id="answeredLabel">已答</span><strong id="answeredCount">0</strong></div>
+          <div><span>正确</span><strong id="correctCount">--</strong></div>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <div id="progressFill"></div>
+        </div>
+        <p id="statusText" class="status-text">加载完成后会自动生成一套练习。</p>
+      </aside>
+
+      <section class="paper" aria-label="题目列表">
+        <div id="loadingState" class="state-message">正在读取题库...</div>
+        <div id="paperRoot"></div>
+        <div id="bankRoot" hidden>
+          <div class="bank-tools" aria-label="题库筛选">
+            <label class="search-field">
+              <span>搜索</span>
+              <input id="bankSearch" type="search" placeholder="题干、选项、答案">
+            </label>
+            <label class="select-field">
+              <span>题型</span>
+              <select id="bankTypeFilter">
+                <option value="all">全部题型</option>
+                <option value="single">单选题</option>
+                <option value="multiple">多选题</option>
+              </select>
+            </label>
+            <button id="bankAnswerToggle" type="button" class="button secondary">显示答案</button>
+          </div>
+          <div id="bankList"></div>
+        </div>
+      </section>
+    </main>
+
+    <template id="questionTemplate">
+      <article class="question-card">
+        <div class="question-head">
+          <div>
+            <span class="question-type"></span>
+            <h2></h2>
+          </div>
+          <span class="question-result" aria-live="polite"></span>
+        </div>
+        <div class="options"></div>
+        <div class="answer-line"></div>
+      </article>
+    </template>
+
+    <script src="./刷题网页.js"></script>
+  </body>
+</html>

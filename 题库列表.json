@@ -1,0 +1,22 @@
+[
+  {
+    "id": "bank1",
+    "name": "题库1",
+    "path": "题库.import.json"
+  },
+  {
+    "id": "bank2",
+    "name": "题库2",
+    "path": "题库2.import.json"
+  },
+  {
+    "id": "bank3",
+    "name": "题库3",
+    "path": "题库3.import.json"
+  },
+  {
+    "id": "bank4",
+    "name": "题库4",
+    "path": "题库4.import.json"
+  }
+]
