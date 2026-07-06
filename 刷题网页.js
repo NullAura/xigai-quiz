@@ -26,6 +26,7 @@ const state = {
   bankShuffleOrder: [],
   bankChecked: false,
   bankRenderedQuestions: [],
+  bankOptionVariants: new Map(),
   paper: [],
   mode: "practice",
   paperMode: "practice",
@@ -679,7 +680,7 @@ function updateSummary() {
       els.statusText.textContent = `题库已判分：当前列表 ${visibleQuestions.length} 题，已答 ${bankAnswered} 题，答对 ${bankCorrect} 题。`;
     } else {
       els.statusText.textContent = state.bankShuffled
-        ? "正在乱序查看全部题库，可搜索题干、选项或答案。"
+        ? "正在乱序查看全部题库，题目和选项均已打乱，可搜索题干、选项或答案。"
         : "正在查看全部题库，可搜索题干、选项或答案。";
     }
     return;
@@ -857,6 +858,7 @@ function clearWrongRecords() {
 function resetBankShuffle() {
   state.bankShuffled = false;
   state.bankShuffleOrder = [];
+  state.bankOptionVariants = new Map();
   updateBankShuffleControls();
 }
 
@@ -874,6 +876,20 @@ function getBankDisplayQuestions() {
   return state.bankShuffleOrder.map((index) => state.bank[index]).filter(Boolean);
 }
 
+function getBankRenderQuestion(question) {
+  if (!state.bankShuffled) {
+    return question;
+  }
+  const key = bankInputName(question);
+  const cached = state.bankOptionVariants.get(key);
+  if (cached) {
+    return cached;
+  }
+  const randomized = randomizeQuestionOptions({ ...question });
+  state.bankOptionVariants.set(key, randomized);
+  return randomized;
+}
+
 function updateBankShuffleControls() {
   if (!els.bankShuffleToggle) {
     return;
@@ -889,8 +905,10 @@ function toggleBankShuffle() {
   state.bankChecked = false;
   if (state.bankShuffled) {
     state.bankShuffleOrder = shuffle(state.bank.map((_, index) => index));
+    state.bankOptionVariants = new Map();
   } else {
     state.bankShuffleOrder = [];
+    state.bankOptionVariants = new Map();
   }
   updateBankShuffleControls();
   renderBank();
@@ -920,9 +938,10 @@ function renderBank() {
     return haystack.includes(keyword);
   });
 
-  state.bankRenderedQuestions = filtered;
+  const renderedQuestions = filtered.map(getBankRenderQuestion);
+  state.bankRenderedQuestions = renderedQuestions;
   els.bankList.innerHTML = "";
-  if (filtered.length === 0) {
+  if (renderedQuestions.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-bank";
     empty.textContent = "没有匹配的题目。";
@@ -930,7 +949,7 @@ function renderBank() {
     return;
   }
 
-  filtered.forEach((question, index) => {
+  renderedQuestions.forEach((question, index) => {
     els.bankList.append(renderBankQuestion(question, index + 1));
   });
 }
