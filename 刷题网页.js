@@ -21,6 +21,8 @@ const state = {
   bank: [],
   allBank: [],
   wrongRecords: {},
+  bankShuffled: false,
+  bankShuffleOrder: [],
   paper: [],
   mode: "practice",
   paperMode: "practice",
@@ -40,6 +42,7 @@ const els = {
   bankTypeFilter: document.querySelector("#bankTypeFilter"),
   bankViewBtn: document.querySelector("#bankViewBtn"),
   bankAnswerToggle: document.querySelector("#bankAnswerToggle"),
+  bankShuffleToggle: document.querySelector("#bankShuffleToggle"),
   paperModeButtons: document.querySelectorAll("[data-paper-mode]"),
   wrongReviewBtn: document.querySelector("#wrongReviewBtn"),
   clearWrongBtn: document.querySelector("#clearWrongBtn"),
@@ -627,7 +630,9 @@ function updateSummary() {
     els.correctCount.textContent = "--";
     els.scoreValue.textContent = `${state.bank.length} 道`;
     els.progressFill.style.width = "100%";
-    els.statusText.textContent = "正在查看全部题库，可搜索题干、选项或答案。";
+    els.statusText.textContent = state.bankShuffled
+      ? "正在乱序查看全部题库，可搜索题干、选项或答案。"
+      : "正在查看全部题库，可搜索题干、选项或答案。";
     return;
   }
 
@@ -782,10 +787,52 @@ function clearWrongRecords() {
   updateSummary();
 }
 
+function resetBankShuffle() {
+  state.bankShuffled = false;
+  state.bankShuffleOrder = [];
+  updateBankShuffleControls();
+}
+
+function ensureBankShuffleOrder() {
+  if (state.bankShuffleOrder.length !== state.bank.length) {
+    state.bankShuffleOrder = shuffle(state.bank.map((_, index) => index));
+  }
+}
+
+function getBankDisplayQuestions() {
+  if (!state.bankShuffled) {
+    return state.bank;
+  }
+  ensureBankShuffleOrder();
+  return state.bankShuffleOrder.map((index) => state.bank[index]).filter(Boolean);
+}
+
+function updateBankShuffleControls() {
+  if (!els.bankShuffleToggle) {
+    return;
+  }
+  els.bankShuffleToggle.classList.toggle("active", state.bankShuffled);
+  els.bankShuffleToggle.setAttribute("aria-pressed", String(state.bankShuffled));
+  els.bankShuffleToggle.textContent = "";
+  els.bankShuffleToggle.append(iconShuffle(), state.bankShuffled ? "恢复顺序" : "乱序显示");
+}
+
+function toggleBankShuffle() {
+  state.bankShuffled = !state.bankShuffled;
+  if (state.bankShuffled) {
+    state.bankShuffleOrder = shuffle(state.bank.map((_, index) => index));
+  } else {
+    state.bankShuffleOrder = [];
+  }
+  updateBankShuffleControls();
+  renderBank();
+  updateSummary();
+}
+
 function renderBank() {
   const keyword = els.bankSearch.value.trim().toLowerCase();
   const type = els.bankTypeFilter.value;
-  const filtered = state.bank.filter((question) => {
+  const filtered = getBankDisplayQuestions().filter((question) => {
     if (type !== "all" && question.type !== type) {
       return false;
     }
@@ -883,6 +930,12 @@ function iconEye() {
   return wrapper.firstChild;
 }
 
+function iconShuffle() {
+  const wrapper = document.createElement("span");
+  wrapper.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>';
+  return wrapper.firstChild;
+}
+
 function iconList() {
   const wrapper = document.createElement("span");
   wrapper.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>';
@@ -898,6 +951,7 @@ function bindEvents() {
   els.bankSearch.addEventListener("input", renderBank);
   els.bankTypeFilter.addEventListener("change", renderBank);
   els.bankAnswerToggle.addEventListener("click", toggleBankAnswers);
+  els.bankShuffleToggle.addEventListener("click", toggleBankShuffle);
   els.wrongReviewBtn.addEventListener("click", startWrongReview);
   els.clearWrongBtn.addEventListener("click", clearWrongRecords);
   els.newPaperBtn.addEventListener("click", drawPaper);
@@ -944,6 +998,7 @@ async function switchBank() {
   els.bankAnswerToggle.textContent = "显示答案";
   els.bankSearch.value = "";
   els.bankTypeFilter.value = "all";
+  resetBankShuffle();
   state.paperMode = "practice";
   updatePaperModeControls();
   try {
@@ -962,6 +1017,7 @@ async function init() {
   bindEvents();
   updatePaperModeControls();
   updateWrongControls();
+  updateBankShuffleControls();
   try {
     await loadBankManifest();
     await loadVerifiedAnalyses();
