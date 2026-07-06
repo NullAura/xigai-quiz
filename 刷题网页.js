@@ -21,8 +21,11 @@ const state = {
   bank: [],
   allBank: [],
   wrongRecords: {},
+  paperWrongRecordedKeys: new Set(),
   bankShuffled: false,
   bankShuffleOrder: [],
+  bankChecked: false,
+  bankRenderedQuestions: [],
   paper: [],
   mode: "practice",
   paperMode: "practice",
@@ -43,6 +46,8 @@ const els = {
   bankViewBtn: document.querySelector("#bankViewBtn"),
   bankAnswerToggle: document.querySelector("#bankAnswerToggle"),
   bankShuffleToggle: document.querySelector("#bankShuffleToggle"),
+  bankCheckBtn: document.querySelector("#bankCheckBtn"),
+  bankResetBtn: document.querySelector("#bankResetBtn"),
   paperModeButtons: document.querySelectorAll("[data-paper-mode]"),
   wrongReviewBtn: document.querySelector("#wrongReviewBtn"),
   clearWrongBtn: document.querySelector("#clearWrongBtn"),
@@ -87,8 +92,24 @@ function isCorrect(question) {
   return normalizeAnswer(getQuestionAnswer(inputName(question))) === normalizeAnswer(question.answer);
 }
 
+function getBankQuestionAnswer(question) {
+  return [...document.querySelectorAll(`[name="${bankInputName(question)}"]:checked`)].map((input) => input.value).sort();
+}
+
+function isBankQuestionAnswered(question) {
+  return getBankQuestionAnswer(question).length > 0;
+}
+
+function isBankQuestionCorrect(question) {
+  return normalizeAnswer(getBankQuestionAnswer(question)) === normalizeAnswer(question.answer);
+}
+
 function inputName(question) {
   return `q-${question.runtimeId || question.id}`;
+}
+
+function bankInputName(question) {
+  return `bank-${question.sourceBankId || state.activeBank?.id || "bank"}-${question.id}`;
 }
 
 function optionEntries(question) {
@@ -285,6 +306,15 @@ function getWrongPool() {
     .filter(Boolean);
 }
 
+function getWrongRecord(question) {
+  return state.wrongRecords[wrongRecordKey(question)];
+}
+
+function wrongCountText(question) {
+  const count = getWrongRecord(question)?.wrongCount || 0;
+  return count > 0 ? `错 ${count} 次` : "";
+}
+
 function addWrongRecord(question) {
   const key = wrongRecordKey(question);
   const previous = state.wrongRecords[key];
@@ -301,14 +331,21 @@ function removeWrongRecord(question) {
   delete state.wrongRecords[wrongRecordKey(question)];
 }
 
+function updateWrongRecordForQuestion(question) {
+  const key = wrongRecordKey(question);
+  if (isCorrect(question)) {
+    removeWrongRecord(question);
+    state.paperWrongRecordedKeys.delete(key);
+    return;
+  }
+  if (!state.paperWrongRecordedKeys.has(key)) {
+    addWrongRecord(question);
+    state.paperWrongRecordedKeys.add(key);
+  }
+}
+
 function updateWrongRecordsFromPaper() {
-  state.paper.forEach((question) => {
-    if (isCorrect(question)) {
-      removeWrongRecord(question);
-    } else {
-      addWrongRecord(question);
-    }
-  });
+  state.paper.forEach(updateWrongRecordForQuestion);
   saveWrongRecords();
 }
 
@@ -358,6 +395,7 @@ function drawPaper() {
   );
   state.checked = false;
   state.answersVisible = false;
+  state.paperWrongRecordedKeys = new Set();
   setMode("practice");
   renderPaper();
   updateSummary();
@@ -515,6 +553,10 @@ function renderQuestion(question, number) {
 
   card.dataset.questionId = inputName(question);
   type.textContent = `${number}. ${question.type_label}`;
+  const wrongBadge = document.createElement("span");
+  wrongBadge.className = "wrong-count-pill";
+  type.after(wrongBadge);
+  updateWrongCountBadge(wrongBadge, question);
   title.textContent = question.question;
   result.textContent = "未判分";
   answerLine.innerHTML = answerMarkup(question);
@@ -622,17 +664,24 @@ function updateSummary() {
   const paperMultipleTotal = state.paper.length ? paperCountByType("multiple") : config.multipleCount;
 
   if (state.mode === "bank") {
-    els.scoreLabel.textContent = "题库总数";
-    els.answeredLabel.textContent = "总题";
+    const visibleQuestions = state.bankRenderedQuestions.length ? state.bankRenderedQuestions : state.bank;
+    const bankAnswered = visibleQuestions.filter(isBankQuestionAnswered).length;
+    const bankCorrect = state.bankChecked ? visibleQuestions.filter(isBankQuestionCorrect).length : null;
+    els.scoreLabel.textContent = state.bankChecked ? "题库判分" : "题库总数";
+    els.answeredLabel.textContent = state.bankChecked ? "已答" : "总题";
     els.singleCount.textContent = String(singleTotal);
     els.multipleCount.textContent = String(multipleTotal);
-    els.answeredCount.textContent = String(state.bank.length);
-    els.correctCount.textContent = "--";
-    els.scoreValue.textContent = `${state.bank.length} 道`;
+    els.answeredCount.textContent = String(state.bankChecked ? bankAnswered : state.bank.length);
+    els.correctCount.textContent = bankCorrect === null ? "--" : String(bankCorrect);
+    els.scoreValue.textContent = state.bankChecked ? `${bankCorrect} / ${bankAnswered}` : `${state.bank.length} 道`;
     els.progressFill.style.width = "100%";
-    els.statusText.textContent = state.bankShuffled
-      ? "正在乱序查看全部题库，可搜索题干、选项或答案。"
-      : "正在查看全部题库，可搜索题干、选项或答案。";
+    if (state.bankChecked) {
+      els.statusText.textContent = `题库已判分：当前列表 ${visibleQuestions.length} 题，已答 ${bankAnswered} 题，答对 ${bankCorrect} 题。`;
+    } else {
+      els.statusText.textContent = state.bankShuffled
+        ? "正在乱序查看全部题库，可搜索题干、选项或答案。"
+        : "正在查看全部题库，可搜索题干、选项或答案。";
+    }
     return;
   }
 
@@ -692,6 +741,7 @@ function checkPaper() {
     updateQuestionResult(question);
   });
   updateWrongRecordsFromPaper();
+  state.paper.forEach(updateQuestionWrongCount);
   els.answerBtn.textContent = "";
   els.answerBtn.append(iconEye(), "隐藏答案");
   updateSummary();
@@ -703,10 +753,12 @@ function handleAnswerChange(question) {
     updateQuestionResult(question);
     if (isCorrect(question)) {
       removeWrongRecord(question);
+      state.paperWrongRecordedKeys.delete(wrongRecordKey(question));
     } else {
-      addWrongRecord(question);
+      updateWrongRecordForQuestion(question);
     }
     saveWrongRecords();
+    updateQuestionWrongCount(question);
   }
   updateSummary();
 }
@@ -723,6 +775,20 @@ function updateQuestionResult(question) {
   card.classList.toggle("wrong", !correct);
   result.textContent = correct ? "正确" : "错误";
   answerLine.classList.toggle("visible", state.answersVisible);
+}
+
+function updateQuestionWrongCount(question) {
+  const card = document.querySelector(`[data-question-id="${inputName(question)}"]`);
+  const badge = card?.querySelector(".wrong-count-pill");
+  if (badge) {
+    updateWrongCountBadge(badge, question);
+  }
+}
+
+function updateWrongCountBadge(badge, question) {
+  const text = wrongCountText(question);
+  badge.textContent = text;
+  badge.hidden = !text;
 }
 
 function toggleAnswers() {
@@ -748,6 +814,7 @@ function setMode(mode) {
   els.bankViewBtn.append(iconList(), inBankMode ? "返回练习" : "全部题库");
 
   if (inBankMode) {
+    state.bankChecked = false;
     renderBank();
   }
   updateSummary();
@@ -819,6 +886,7 @@ function updateBankShuffleControls() {
 
 function toggleBankShuffle() {
   state.bankShuffled = !state.bankShuffled;
+  state.bankChecked = false;
   if (state.bankShuffled) {
     state.bankShuffleOrder = shuffle(state.bank.map((_, index) => index));
   } else {
@@ -852,6 +920,7 @@ function renderBank() {
     return haystack.includes(keyword);
   });
 
+  state.bankRenderedQuestions = filtered;
   els.bankList.innerHTML = "";
   if (filtered.length === 0) {
     const empty = document.createElement("div");
@@ -869,10 +938,28 @@ function renderBank() {
 function renderBankQuestion(question, number) {
   const card = document.createElement("article");
   card.className = "bank-card";
+  card.dataset.bankQuestionId = bankInputName(question);
 
   const meta = document.createElement("div");
   meta.className = "bank-meta-line";
-  meta.innerHTML = `<span>${number}. ${question.type_label}</span><span>ID ${question.id}</span>`;
+  const type = document.createElement("span");
+  type.textContent = `${number}. ${question.type_label}`;
+  const result = document.createElement("span");
+  result.className = "bank-result";
+  result.textContent = state.bankChecked
+    ? isBankQuestionAnswered(question)
+      ? isBankQuestionCorrect(question)
+        ? "正确"
+        : "错误"
+      : "未答"
+    : "未判分";
+  const wrongCount = document.createElement("span");
+  wrongCount.className = "bank-wrong-count";
+  wrongCount.textContent = wrongCountText(question);
+  wrongCount.hidden = !wrongCount.textContent;
+  const id = document.createElement("span");
+  id.textContent = `ID ${question.id}`;
+  meta.append(type, wrongCount, result, id);
 
   const title = document.createElement("h2");
   title.textContent = question.question;
@@ -880,24 +967,101 @@ function renderBankQuestion(question, number) {
   const options = document.createElement("div");
   options.className = "bank-options";
   optionEntries(question).forEach(([key, text]) => {
-    const row = document.createElement("div");
-    row.className = "bank-option";
-    row.innerHTML = `<span class="option-key">${key}</span>${escapeHtml(text)}`;
-    options.append(row);
+    const label = document.createElement("label");
+    label.className = "bank-option bank-option-row";
+
+    const input = document.createElement("input");
+    input.type = question.type === "single" ? "radio" : "checkbox";
+    input.name = bankInputName(question);
+    input.value = key;
+    input.addEventListener("change", () => handleBankAnswerChange(question));
+
+    const optionText = document.createElement("span");
+    optionText.className = "option-text";
+    optionText.innerHTML = `<span class="option-key">${key}</span>${escapeHtml(text)}`;
+
+    label.append(input, optionText);
+    options.append(label);
   });
 
   const answer = document.createElement("div");
   answer.className = `bank-answer${state.bankAnswersVisible ? " visible" : ""}`;
   answer.innerHTML = answerMarkup(question);
 
+  if (state.bankChecked) {
+    const answered = isBankQuestionAnswered(question);
+    const correct = isBankQuestionCorrect(question);
+    card.classList.toggle("correct", answered && correct);
+    card.classList.toggle("wrong", answered && !correct);
+  }
+
   card.append(meta, title, options, answer);
   return card;
+}
+
+function updateBankAnswerControls() {
+  els.bankAnswerToggle.textContent = state.bankAnswersVisible ? "隐藏答案" : "显示答案";
+}
+
+function updateBankQuestionResult(question) {
+  const card = document.querySelector(`[data-bank-question-id="${bankInputName(question)}"]`);
+  if (!card) return;
+
+  const result = card.querySelector(".bank-result");
+  const answer = card.querySelector(".bank-answer");
+  const answered = isBankQuestionAnswered(question);
+  const correct = isBankQuestionCorrect(question);
+
+  if (!answered) {
+    card.classList.remove("correct", "wrong");
+    result.textContent = "未答";
+    answer.classList.toggle("visible", state.bankAnswersVisible);
+    return;
+  }
+
+  card.classList.toggle("correct", correct);
+  card.classList.toggle("wrong", !correct);
+  result.textContent = correct ? "正确" : "错误";
+  answer.classList.toggle("visible", state.bankAnswersVisible);
+}
+
+function handleBankAnswerChange(question) {
+  if (state.bankChecked) {
+    updateBankQuestionResult(question);
+  }
+  updateSummary();
+}
+
+function checkBankAnswers() {
+  const anchor = getViewportAnchor(".bank-card");
+  state.bankChecked = true;
+  state.bankAnswersVisible = true;
+  state.bankRenderedQuestions.forEach(updateBankQuestionResult);
+  updateBankAnswerControls();
+  updateSummary();
+  restoreViewportAnchor(anchor);
+}
+
+function resetBankAnswers() {
+  const anchor = getViewportAnchor(".bank-card");
+  state.bankChecked = false;
+  state.bankAnswersVisible = false;
+  updateBankAnswerControls();
+  renderBank();
+  updateSummary();
+  restoreViewportAnchor(anchor);
+}
+
+function handleBankListChange() {
+  state.bankChecked = false;
+  renderBank();
+  updateSummary();
 }
 
 function toggleBankAnswers() {
   const anchor = getViewportAnchor(".bank-card");
   state.bankAnswersVisible = !state.bankAnswersVisible;
-  els.bankAnswerToggle.textContent = state.bankAnswersVisible ? "隐藏答案" : "显示答案";
+  updateBankAnswerControls();
   document.querySelectorAll(".bank-answer").forEach((line) => {
     line.classList.toggle("visible", state.bankAnswersVisible);
   });
@@ -948,10 +1112,12 @@ function bindEvents() {
     button.addEventListener("click", () => setPaperMode(button.dataset.paperMode));
   });
   els.bankViewBtn.addEventListener("click", toggleBankMode);
-  els.bankSearch.addEventListener("input", renderBank);
-  els.bankTypeFilter.addEventListener("change", renderBank);
+  els.bankSearch.addEventListener("input", handleBankListChange);
+  els.bankTypeFilter.addEventListener("change", handleBankListChange);
   els.bankAnswerToggle.addEventListener("click", toggleBankAnswers);
   els.bankShuffleToggle.addEventListener("click", toggleBankShuffle);
+  els.bankCheckBtn.addEventListener("click", checkBankAnswers);
+  els.bankResetBtn.addEventListener("click", resetBankAnswers);
   els.wrongReviewBtn.addEventListener("click", startWrongReview);
   els.clearWrongBtn.addEventListener("click", clearWrongRecords);
   els.newPaperBtn.addEventListener("click", drawPaper);
@@ -993,9 +1159,10 @@ async function switchBank() {
   els.paperRoot.innerHTML = "";
   els.bankList.innerHTML = "";
   state.checked = false;
+  state.bankChecked = false;
   state.answersVisible = false;
   state.bankAnswersVisible = false;
-  els.bankAnswerToggle.textContent = "显示答案";
+  updateBankAnswerControls();
   els.bankSearch.value = "";
   els.bankTypeFilter.value = "all";
   resetBankShuffle();

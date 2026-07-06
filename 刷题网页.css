@@ -230,6 +230,20 @@ select {
   background: var(--muted);
 }
 
+.wrong-count-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 7px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid rgba(180, 35, 24, 0.18);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
@@ -543,7 +557,7 @@ select {
 
 .bank-tools {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(150px, 210px) auto auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 210px) minmax(260px, auto);
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -552,6 +566,13 @@ select {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
+}
+
+.bank-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .search-field,
@@ -595,6 +616,14 @@ select {
   box-shadow: var(--shadow);
 }
 
+.bank-card.correct {
+  border-color: rgba(23, 114, 69, 0.42);
+}
+
+.bank-card.wrong {
+  border-color: rgba(180, 35, 24, 0.42);
+}
+
 .bank-card h2 {
   margin: 0;
   font-size: 16px;
@@ -603,13 +632,46 @@ select {
 
 .bank-meta-line {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   align-items: center;
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.bank-meta-line span:last-child {
+  margin-left: auto;
+}
+
+.bank-result,
+.bank-wrong-count {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  background: var(--surface-soft);
+  border: 1px solid #e4eaf2;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.bank-wrong-count {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: rgba(180, 35, 24, 0.18);
+}
+
+.bank-card.correct .bank-result {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: rgba(23, 114, 69, 0.22);
+}
+
+.bank-card.wrong .bank-result {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: rgba(180, 35, 24, 0.18);
 }
 
 .bank-options {
@@ -624,6 +686,27 @@ select {
   border: 1px solid var(--border);
   border-radius: 7px;
   overflow-wrap: anywhere;
+}
+
+.bank-option-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.bank-option-row:hover {
+  border-color: rgba(23, 107, 135, 0.38);
+  background: var(--accent-soft);
+}
+
+.bank-option-row input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
 }
 
 .bank-answer {
@@ -684,6 +767,10 @@ select {
 
   .bank-tools {
     grid-template-columns: 1fr;
+  }
+
+  .bank-action-group {
+    justify-content: flex-start;
   }
 }
 
