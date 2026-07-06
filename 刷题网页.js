@@ -2,7 +2,9 @@ const CONFIG = {
   paperModes: {
     practice: { label: "练习模式", singleCount: 15, multipleCount: 25, source: "current" },
     exam: { label: "考试模式", singleCount: 80, multipleCount: 20, source: "all" },
+    wrong: { label: "错题重刷", singleCount: 15, multipleCount: 25, source: "wrong", allowPartial: true },
   },
+  wrongStorageKey: "xigaiQuizWrongQuestions:v1",
   manifestPaths: [
     new URL("题库列表.json", window.location.href).href,
     "./题库列表.json",
@@ -18,6 +20,7 @@ const state = {
   activeBank: null,
   bank: [],
   allBank: [],
+  wrongRecords: {},
   paper: [],
   mode: "practice",
   paperMode: "practice",
@@ -38,6 +41,9 @@ const els = {
   bankViewBtn: document.querySelector("#bankViewBtn"),
   bankAnswerToggle: document.querySelector("#bankAnswerToggle"),
   paperModeButtons: document.querySelectorAll("[data-paper-mode]"),
+  wrongReviewBtn: document.querySelector("#wrongReviewBtn"),
+  clearWrongBtn: document.querySelector("#clearWrongBtn"),
+  wrongBadge: document.querySelector("#wrongBadge"),
   newPaperBtn: document.querySelector("#newPaperBtn"),
   checkBtn: document.querySelector("#checkBtn"),
   answerBtn: document.querySelector("#answerBtn"),
@@ -92,7 +98,13 @@ function getPaperModeConfig() {
 
 function getPaperSource() {
   const config = getPaperModeConfig();
-  return config.source === "all" ? state.allBank : state.bank;
+  if (config.source === "all") {
+    return state.allBank;
+  }
+  if (config.source === "wrong") {
+    return getWrongPool();
+  }
+  return state.bank;
 }
 
 function randomizeQuestionOptions(question) {
@@ -222,19 +234,119 @@ function dedupeQuestions(questions) {
   return unique;
 }
 
+function loadWrongRecords() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONFIG.wrongStorageKey) || "{}");
+    state.wrongRecords = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+  } catch {
+    state.wrongRecords = {};
+  }
+}
+
+function saveWrongRecords() {
+  try {
+    localStorage.setItem(CONFIG.wrongStorageKey, JSON.stringify(state.wrongRecords));
+  } catch {
+    // localStorage can be unavailable in some private browsing modes.
+  }
+  updateWrongControls();
+}
+
+function wrongRecordKey(question) {
+  return questionFingerprint(question);
+}
+
+function serializeWrongQuestion(question) {
+  return {
+    id: question.id,
+    type: question.type,
+    type_label: question.type_label,
+    question: question.question,
+    options: question.options,
+    answer: question.answer,
+    answer_text: question.answer_text,
+    analysis: question.analysis,
+    sourceBankId: question.sourceBankId,
+    sourceBankName: question.sourceBankName,
+  };
+}
+
+function getWrongCount() {
+  return Object.keys(state.wrongRecords).length;
+}
+
+function getWrongPool() {
+  const allByKey = new Map(state.allBank.map((question) => [wrongRecordKey(question), question]));
+  return Object.values(state.wrongRecords)
+    .map((record) => allByKey.get(record.key) || record.question)
+    .filter(Boolean);
+}
+
+function addWrongRecord(question) {
+  const key = wrongRecordKey(question);
+  const previous = state.wrongRecords[key];
+  state.wrongRecords[key] = {
+    key,
+    question: serializeWrongQuestion(question),
+    wrongCount: (previous?.wrongCount || 0) + 1,
+    firstWrongAt: previous?.firstWrongAt || new Date().toISOString(),
+    lastWrongAt: new Date().toISOString(),
+  };
+}
+
+function removeWrongRecord(question) {
+  delete state.wrongRecords[wrongRecordKey(question)];
+}
+
+function updateWrongRecordsFromPaper() {
+  state.paper.forEach((question) => {
+    if (isCorrect(question)) {
+      removeWrongRecord(question);
+    } else {
+      addWrongRecord(question);
+    }
+  });
+  saveWrongRecords();
+}
+
+function updateWrongControls() {
+  const count = getWrongCount();
+  if (els.wrongBadge) {
+    els.wrongBadge.textContent = String(count);
+  }
+  if (els.wrongReviewBtn) {
+    els.wrongReviewBtn.disabled = count === 0;
+    els.wrongReviewBtn.title = count === 0 ? "交卷后答错的题会加入错题本" : `重刷 ${count} 道错题`;
+  }
+  if (els.clearWrongBtn) {
+    els.clearWrongBtn.disabled = count === 0;
+  }
+}
+
 function drawPaper() {
   const config = getPaperModeConfig();
   const sourceBank = getPaperSource();
   const singles = sourceBank.filter((item) => item.type === "single");
   const multiples = sourceBank.filter((item) => item.type === "multiple");
+  const singleCount = config.allowPartial ? Math.min(config.singleCount, singles.length) : config.singleCount;
+  const multipleCount = config.allowPartial ? Math.min(config.multipleCount, multiples.length) : config.multipleCount;
 
-  if (singles.length < config.singleCount || multiples.length < config.multipleCount) {
-    throw new Error(`${config.label}题库数量不足：单选 ${singles.length}/${config.singleCount}，多选 ${multiples.length}/${config.multipleCount}`);
+  if (config.source === "wrong" && sourceBank.length === 0) {
+    state.paperMode = "practice";
+    updatePaperModeControls();
+    updateWrongControls();
+    drawPaper();
+    els.statusText.textContent = "暂无错题，已返回练习模式。交卷判分后，答错或未答的题会自动加入错题本。";
+    return;
+  }
+
+  if (singles.length < singleCount || multiples.length < multipleCount) {
+    throw new Error(`${config.label}题库数量不足：单选 ${singles.length}/${singleCount}，多选 ${multiples.length}/${multipleCount}`);
   }
 
   state.paper = [
-    ...shuffle(singles).slice(0, config.singleCount),
-    ...shuffle(multiples).slice(0, config.multipleCount),
+    ...shuffle(singles).slice(0, singleCount),
+    ...shuffle(multiples).slice(0, multipleCount),
   ].map((question, index) =>
     randomizeQuestionOptions({
       ...question,
@@ -353,15 +465,20 @@ function setPaperMode(mode) {
   drawPaper();
 }
 
+function paperCountByType(type) {
+  return state.paper.filter((question) => question.type === type).length;
+}
+
 function renderPaper() {
-  const config = getPaperModeConfig();
+  const singleCount = paperCountByType("single");
+  const multipleCount = paperCountByType("multiple");
   els.loadingState.hidden = true;
   els.paperRoot.innerHTML = "";
   els.answerBtn.textContent = "";
   els.answerBtn.append(iconEye(), "显示答案");
 
-  const singleSection = createSection("一、单选题", `共 ${config.singleCount} 题，每题 1 分`);
-  const multipleSection = createSection("二、多选题", `共 ${config.multipleCount} 题，每题 1 分，多选少选均不得分`);
+  const singleSection = createSection("一、单选题", `共 ${singleCount} 题，每题 1 分`);
+  const multipleSection = createSection("二、多选题", `共 ${multipleCount} 题，每题 1 分，多选少选均不得分`);
   els.paperRoot.append(singleSection.header, singleSection.root, multipleSection.header, multipleSection.root);
 
   state.paper.forEach((question, index) => {
@@ -498,6 +615,8 @@ function updateSummary() {
   const correct = state.checked ? state.paper.filter(isCorrect).length : null;
   const singleTotal = state.bank.filter((item) => item.type === "single").length;
   const multipleTotal = state.bank.filter((item) => item.type === "multiple").length;
+  const paperSingleTotal = state.paper.length ? paperCountByType("single") : config.singleCount;
+  const paperMultipleTotal = state.paper.length ? paperCountByType("multiple") : config.multipleCount;
 
   if (state.mode === "bank") {
     els.scoreLabel.textContent = "题库总数";
@@ -514,18 +633,19 @@ function updateSummary() {
 
   els.scoreLabel.textContent = `${config.label}得分`;
   els.answeredLabel.textContent = "已答";
-  els.singleCount.textContent = String(config.singleCount);
-  els.multipleCount.textContent = String(config.multipleCount);
+  els.singleCount.textContent = String(paperSingleTotal);
+  els.multipleCount.textContent = String(paperMultipleTotal);
   els.answeredCount.textContent = String(answered);
   els.correctCount.textContent = correct === null ? "--" : String(correct);
-  els.progressFill.style.width = `${Math.round((answered / total) * 100)}%`;
+  els.progressFill.style.width = `${total ? Math.round((answered / total) * 100) : 0}%`;
 
   if (state.checked) {
     els.scoreValue.textContent = `${correct} / ${total}`;
-    els.statusText.textContent = `已判分：答对 ${correct} 题，答错 ${total - correct} 题。`;
+    els.statusText.textContent = `已判分：答对 ${correct} 题，答错 ${total - correct} 题。错题本现有 ${getWrongCount()} 道。`;
   } else {
     els.scoreValue.textContent = `-- / ${total}`;
-    const sourceText = config.source === "all" ? "从全部题库随机抽取" : "从当前题库随机抽取";
+    const sourceText =
+      config.source === "all" ? "从全部题库随机抽取" : config.source === "wrong" ? "从错题本随机抽取" : "从当前题库随机抽取";
     els.statusText.textContent = `${config.label}${sourceText}，已作答 ${answered} / ${total} 题。`;
   }
 }
@@ -566,6 +686,7 @@ function checkPaper() {
   state.paper.forEach((question) => {
     updateQuestionResult(question);
   });
+  updateWrongRecordsFromPaper();
   els.answerBtn.textContent = "";
   els.answerBtn.append(iconEye(), "隐藏答案");
   updateSummary();
@@ -575,6 +696,12 @@ function checkPaper() {
 function handleAnswerChange(question) {
   if (state.checked) {
     updateQuestionResult(question);
+    if (isCorrect(question)) {
+      removeWrongRecord(question);
+    } else {
+      addWrongRecord(question);
+    }
+    saveWrongRecords();
   }
   updateSummary();
 }
@@ -623,6 +750,36 @@ function setMode(mode) {
 
 function toggleBankMode() {
   setMode(state.mode === "bank" ? "practice" : "bank");
+}
+
+function startWrongReview() {
+  if (getWrongCount() === 0) {
+    els.statusText.textContent = "暂无错题。交卷判分后，答错或未答的题会自动加入错题本。";
+    updateWrongControls();
+    return;
+  }
+  state.paperMode = "wrong";
+  updatePaperModeControls();
+  drawPaper();
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function clearWrongRecords() {
+  if (getWrongCount() === 0) {
+    return;
+  }
+  if (!window.confirm("确定清空全部错题记录吗？")) {
+    return;
+  }
+  state.wrongRecords = {};
+  saveWrongRecords();
+  if (state.paperMode === "wrong") {
+    state.paperMode = "practice";
+    updatePaperModeControls();
+    drawPaper();
+    return;
+  }
+  updateSummary();
 }
 
 function renderBank() {
@@ -741,6 +898,8 @@ function bindEvents() {
   els.bankSearch.addEventListener("input", renderBank);
   els.bankTypeFilter.addEventListener("change", renderBank);
   els.bankAnswerToggle.addEventListener("click", toggleBankAnswers);
+  els.wrongReviewBtn.addEventListener("click", startWrongReview);
+  els.clearWrongBtn.addEventListener("click", clearWrongRecords);
   els.newPaperBtn.addEventListener("click", drawPaper);
   els.checkBtn.addEventListener("click", checkPaper);
   els.answerBtn.addEventListener("click", toggleAnswers);
@@ -785,6 +944,8 @@ async function switchBank() {
   els.bankAnswerToggle.textContent = "显示答案";
   els.bankSearch.value = "";
   els.bankTypeFilter.value = "all";
+  state.paperMode = "practice";
+  updatePaperModeControls();
   try {
     await loadBank();
     drawPaper();
@@ -797,8 +958,10 @@ async function switchBank() {
 }
 
 async function init() {
+  loadWrongRecords();
   bindEvents();
   updatePaperModeControls();
+  updateWrongControls();
   try {
     await loadBankManifest();
     await loadVerifiedAnalyses();
