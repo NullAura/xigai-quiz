@@ -22,6 +22,7 @@ const state = {
   allBank: [],
   wrongRecords: {},
   paperWrongRecordedKeys: new Set(),
+  bankWrongRecordedKeys: new Set(),
   bankShuffled: false,
   bankShuffleOrder: [],
   bankChecked: false,
@@ -347,6 +348,27 @@ function updateWrongRecordForQuestion(question) {
 
 function updateWrongRecordsFromPaper() {
   state.paper.forEach(updateWrongRecordForQuestion);
+  saveWrongRecords();
+}
+
+function updateWrongRecordForBankQuestion(question) {
+  const key = wrongRecordKey(question);
+  if (!isBankQuestionAnswered(question)) {
+    return;
+  }
+  if (isBankQuestionCorrect(question)) {
+    removeWrongRecord(question);
+    state.bankWrongRecordedKeys.delete(key);
+    return;
+  }
+  if (!state.bankWrongRecordedKeys.has(key)) {
+    addWrongRecord(question);
+    state.bankWrongRecordedKeys.add(key);
+  }
+}
+
+function updateWrongRecordsFromBank() {
+  state.bankRenderedQuestions.forEach(updateWrongRecordForBankQuestion);
   saveWrongRecords();
 }
 
@@ -859,6 +881,7 @@ function resetBankShuffle() {
   state.bankShuffled = false;
   state.bankShuffleOrder = [];
   state.bankOptionVariants = new Map();
+  state.bankWrongRecordedKeys = new Set();
   updateBankShuffleControls();
 }
 
@@ -903,6 +926,7 @@ function updateBankShuffleControls() {
 function toggleBankShuffle() {
   state.bankShuffled = !state.bankShuffled;
   state.bankChecked = false;
+  state.bankWrongRecordedKeys = new Set();
   if (state.bankShuffled) {
     state.bankShuffleOrder = shuffle(state.bank.map((_, index) => index));
     state.bankOptionVariants = new Map();
@@ -1046,16 +1070,29 @@ function updateBankQuestionResult(question) {
 
 function handleBankAnswerChange(question) {
   if (state.bankChecked) {
+    updateWrongRecordForBankQuestion(question);
+    saveWrongRecords();
     updateBankQuestionResult(question);
+    updateBankQuestionWrongCount(question);
   }
   updateSummary();
+}
+
+function updateBankQuestionWrongCount(question) {
+  const card = document.querySelector(`[data-bank-question-id="${bankInputName(question)}"]`);
+  const badge = card?.querySelector(".bank-wrong-count");
+  if (badge) {
+    updateWrongCountBadge(badge, question);
+  }
 }
 
 function checkBankAnswers() {
   const anchor = getViewportAnchor(".bank-card");
   state.bankChecked = true;
   state.bankAnswersVisible = true;
+  updateWrongRecordsFromBank();
   state.bankRenderedQuestions.forEach(updateBankQuestionResult);
+  state.bankRenderedQuestions.forEach(updateBankQuestionWrongCount);
   updateBankAnswerControls();
   updateSummary();
   restoreViewportAnchor(anchor);
@@ -1065,6 +1102,7 @@ function resetBankAnswers() {
   const anchor = getViewportAnchor(".bank-card");
   state.bankChecked = false;
   state.bankAnswersVisible = false;
+  state.bankWrongRecordedKeys = new Set();
   updateBankAnswerControls();
   renderBank();
   updateSummary();
@@ -1073,6 +1111,7 @@ function resetBankAnswers() {
 
 function handleBankListChange() {
   state.bankChecked = false;
+  state.bankWrongRecordedKeys = new Set();
   renderBank();
   updateSummary();
 }
@@ -1181,6 +1220,7 @@ async function switchBank() {
   state.bankChecked = false;
   state.answersVisible = false;
   state.bankAnswersVisible = false;
+  state.bankWrongRecordedKeys = new Set();
   updateBankAnswerControls();
   els.bankSearch.value = "";
   els.bankTypeFilter.value = "all";
