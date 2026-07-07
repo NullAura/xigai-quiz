@@ -10,6 +10,11 @@
     "path": "题库2.import.json"
   },
   {
+    "id": "chaoxing",
+    "name": "学习通",
+    "path": "学习通.import.json"
+  },
+  {
     "id": "bank3",
     "name": "题库3",
     "path": "题库3.import.json"
