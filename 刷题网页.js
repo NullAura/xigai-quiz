@@ -3,8 +3,10 @@ const CONFIG = {
     practice: { label: "练习模式", singleCount: 15, multipleCount: 25, source: "current" },
     exam: { label: "考试模式", singleCount: 80, multipleCount: 20, source: "all" },
     wrong: { label: "错题重刷", singleCount: 15, multipleCount: 25, source: "wrong", allowPartial: true },
+    history: { label: "历史错题", singleCount: 15, multipleCount: 25, source: "history", allowPartial: true },
   },
   wrongStorageKey: "xigaiQuizWrongQuestions:v1",
+  wrongHistoryStorageKey: "xigaiQuizWrongHistory:v1",
   manifestPaths: [
     new URL("题库列表.json", window.location.href).href,
     "./题库列表.json",
@@ -21,6 +23,7 @@ const state = {
   bank: [],
   allBank: [],
   wrongRecords: {},
+  wrongHistoryRecords: {},
   paperWrongRecordedKeys: new Set(),
   bankWrongRecordedKeys: new Set(),
   bankShuffled: false,
@@ -52,8 +55,10 @@ const els = {
   bankResetBtn: document.querySelector("#bankResetBtn"),
   paperModeButtons: document.querySelectorAll("[data-paper-mode]"),
   wrongReviewBtn: document.querySelector("#wrongReviewBtn"),
+  wrongHistoryBtn: document.querySelector("#wrongHistoryBtn"),
   clearWrongBtn: document.querySelector("#clearWrongBtn"),
   wrongBadge: document.querySelector("#wrongBadge"),
+  wrongHistoryBadge: document.querySelector("#wrongHistoryBadge"),
   newPaperBtn: document.querySelector("#newPaperBtn"),
   checkBtn: document.querySelector("#checkBtn"),
   answerBtn: document.querySelector("#answerBtn"),
@@ -129,6 +134,9 @@ function getPaperSource() {
   }
   if (config.source === "wrong") {
     return getWrongPool();
+  }
+  if (config.source === "history") {
+    return getWrongHistoryPool();
   }
   return state.bank;
 }
@@ -267,11 +275,19 @@ function loadWrongRecords() {
   } catch {
     state.wrongRecords = {};
   }
+  try {
+    const savedHistory = JSON.parse(localStorage.getItem(CONFIG.wrongHistoryStorageKey) || "{}");
+    state.wrongHistoryRecords =
+      savedHistory && typeof savedHistory === "object" && !Array.isArray(savedHistory) ? savedHistory : {};
+  } catch {
+    state.wrongHistoryRecords = {};
+  }
 }
 
 function saveWrongRecords() {
   try {
     localStorage.setItem(CONFIG.wrongStorageKey, JSON.stringify(state.wrongRecords));
+    localStorage.setItem(CONFIG.wrongHistoryStorageKey, JSON.stringify(state.wrongHistoryRecords));
   } catch {
     // localStorage can be unavailable in some private browsing modes.
   }
@@ -301,9 +317,20 @@ function getWrongCount() {
   return Object.keys(state.wrongRecords).length;
 }
 
+function getWrongHistoryCount() {
+  return Object.keys(state.wrongHistoryRecords).length;
+}
+
 function getWrongPool() {
   const allByKey = new Map(state.allBank.map((question) => [wrongRecordKey(question), question]));
   return Object.values(state.wrongRecords)
+    .map((record) => allByKey.get(record.key) || record.question)
+    .filter(Boolean);
+}
+
+function getWrongHistoryPool() {
+  const allByKey = new Map(state.allBank.map((question) => [wrongRecordKey(question), question]));
+  return Object.values(state.wrongHistoryRecords)
     .map((record) => allByKey.get(record.key) || record.question)
     .filter(Boolean);
 }
@@ -321,6 +348,19 @@ function addWrongRecord(question) {
   const key = wrongRecordKey(question);
   const previous = state.wrongRecords[key];
   state.wrongRecords[key] = {
+    key,
+    question: serializeWrongQuestion(question),
+    wrongCount: (previous?.wrongCount || 0) + 1,
+    firstWrongAt: previous?.firstWrongAt || new Date().toISOString(),
+    lastWrongAt: new Date().toISOString(),
+  };
+  addWrongHistoryRecord(question);
+}
+
+function addWrongHistoryRecord(question) {
+  const key = wrongRecordKey(question);
+  const previous = state.wrongHistoryRecords[key];
+  state.wrongHistoryRecords[key] = {
     key,
     question: serializeWrongQuestion(question),
     wrongCount: (previous?.wrongCount || 0) + 1,
@@ -396,12 +436,21 @@ function refreshVisibleWrongIndicators() {
 
 function updateWrongControls() {
   const count = getWrongCount();
+  const historyCount = getWrongHistoryCount();
   if (els.wrongBadge) {
     els.wrongBadge.textContent = String(count);
+  }
+  if (els.wrongHistoryBadge) {
+    els.wrongHistoryBadge.textContent = String(historyCount);
   }
   if (els.wrongReviewBtn) {
     els.wrongReviewBtn.disabled = count === 0;
     els.wrongReviewBtn.title = count === 0 ? "交卷后答错的题会加入错题本" : `重刷 ${count} 道错题`;
+  }
+  if (els.wrongHistoryBtn) {
+    els.wrongHistoryBtn.disabled = historyCount === 0;
+    els.wrongHistoryBtn.title =
+      historyCount === 0 ? "所有做错过的题会长期保存在这里" : `重刷 ${historyCount} 道历史错题`;
   }
   if (els.clearWrongBtn) {
     els.clearWrongBtn.disabled = count === 0;
@@ -416,12 +465,15 @@ function drawPaper() {
   const singleCount = config.allowPartial ? Math.min(config.singleCount, singles.length) : config.singleCount;
   const multipleCount = config.allowPartial ? Math.min(config.multipleCount, multiples.length) : config.multipleCount;
 
-  if (config.source === "wrong" && sourceBank.length === 0) {
+  if ((config.source === "wrong" || config.source === "history") && sourceBank.length === 0) {
     state.paperMode = "practice";
     updatePaperModeControls();
     updateWrongControls();
     drawPaper();
-    els.statusText.textContent = "暂无错题，已返回练习模式。交卷判分后，答错或未答的题会自动加入错题本。";
+    els.statusText.textContent =
+      config.source === "history"
+        ? "暂无历史错题，已返回练习模式。交卷判分后，做错过的题会长期保存在历史错题中。"
+        : "暂无错题，已返回练习模式。交卷判分后，答错或未答的题会自动加入错题本。";
     return;
   }
 
@@ -744,11 +796,17 @@ function updateSummary() {
 
   if (state.checked) {
     els.scoreValue.textContent = `${correct} / ${total}`;
-    els.statusText.textContent = `已判分：答对 ${correct} 题，答错 ${total - correct} 题。错题本现有 ${getWrongCount()} 道。`;
+    els.statusText.textContent = `已判分：答对 ${correct} 题，答错 ${total - correct} 题。错题本现有 ${getWrongCount()} 道，历史错题 ${getWrongHistoryCount()} 道。`;
   } else {
     els.scoreValue.textContent = `-- / ${total}`;
     const sourceText =
-      config.source === "all" ? "从全部题库随机抽取" : config.source === "wrong" ? "从错题本随机抽取" : "从当前题库随机抽取";
+      config.source === "all"
+        ? "从全部题库随机抽取"
+        : config.source === "wrong"
+          ? "从错题本随机抽取"
+          : config.source === "history"
+            ? "随机抽取"
+            : "从当前题库随机抽取";
     els.statusText.textContent = `${config.label}${sourceText}，已作答 ${answered} / ${total} 题。`;
   }
 }
@@ -908,6 +966,18 @@ function startWrongReview() {
     return;
   }
   state.paperMode = "wrong";
+  updatePaperModeControls();
+  drawPaper();
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function startWrongHistoryReview() {
+  if (getWrongHistoryCount() === 0) {
+    els.statusText.textContent = "暂无历史错题。交卷判分后，做错过的题会长期保存在这里。";
+    updateWrongControls();
+    return;
+  }
+  state.paperMode = "history";
   updatePaperModeControls();
   drawPaper();
   window.scrollTo({ top: 0, behavior: "auto" });
@@ -1239,6 +1309,7 @@ function bindEvents() {
   els.bankCheckBtn.addEventListener("click", checkBankAnswers);
   els.bankResetBtn.addEventListener("click", resetBankAnswers);
   els.wrongReviewBtn.addEventListener("click", startWrongReview);
+  els.wrongHistoryBtn.addEventListener("click", startWrongHistoryReview);
   els.clearWrongBtn.addEventListener("click", clearWrongRecords);
   els.newPaperBtn.addEventListener("click", drawPaper);
   els.checkBtn.addEventListener("click", checkPaper);
