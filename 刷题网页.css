@@ -244,6 +244,49 @@ select {
   vertical-align: middle;
 }
 
+.manual-wrong-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 9px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px solid #e4eaf2;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.manual-wrong-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.manual-wrong-toggle:hover {
+  color: var(--danger);
+  border-color: rgba(180, 35, 24, 0.28);
+}
+
+.manual-wrong-toggle.active {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: rgba(180, 35, 24, 0.2);
+}
+
 .layout {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
@@ -379,6 +422,15 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.question-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .question-type {
@@ -635,6 +687,7 @@ select {
   justify-content: flex-start;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 12px;
@@ -809,8 +862,13 @@ select {
     display: block;
   }
 
+  .question-actions {
+    justify-content: flex-start;
+    margin-top: 10px;
+  }
+
   .question-result {
     display: inline-block;
-    margin-top: 10px;
+    margin-top: 0;
   }
 }

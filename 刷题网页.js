@@ -372,6 +372,28 @@ function updateWrongRecordsFromBank() {
   saveWrongRecords();
 }
 
+function toggleManualWrongRecord(question) {
+  if (getWrongRecord(question)) {
+    removeWrongRecord(question);
+  } else {
+    addWrongRecord(question);
+  }
+  saveWrongRecords();
+  updateWrongIndicatorsForQuestion(question);
+  updateSummary();
+}
+
+function updateWrongIndicatorsForQuestion(question) {
+  updateQuestionWrongCount(question);
+  updateBankQuestionWrongCount(question);
+  updateManualWrongButtons(question);
+}
+
+function refreshVisibleWrongIndicators() {
+  state.paper.forEach(updateWrongIndicatorsForQuestion);
+  state.bankRenderedQuestions.forEach(updateWrongIndicatorsForQuestion);
+}
+
 function updateWrongControls() {
   const count = getWrongCount();
   if (els.wrongBadge) {
@@ -573,6 +595,8 @@ function renderQuestion(question, number) {
   const options = fragment.querySelector(".options");
   const answerLine = fragment.querySelector(".answer-line");
   const name = inputName(question);
+  const actions = document.createElement("div");
+  actions.className = "question-actions";
 
   card.dataset.questionId = inputName(question);
   type.textContent = `${number}. ${question.type_label}`;
@@ -582,6 +606,8 @@ function renderQuestion(question, number) {
   updateWrongCountBadge(wrongBadge, question);
   title.textContent = question.question;
   result.textContent = "未判分";
+  result.replaceWith(actions);
+  actions.append(createManualWrongButton(question), result);
   answerLine.innerHTML = answerMarkup(question);
 
   optionEntries(question).forEach(([key, text]) => {
@@ -764,7 +790,7 @@ function checkPaper() {
     updateQuestionResult(question);
   });
   updateWrongRecordsFromPaper();
-  state.paper.forEach(updateQuestionWrongCount);
+  state.paper.forEach(updateWrongIndicatorsForQuestion);
   els.answerBtn.textContent = "";
   els.answerBtn.append(iconEye(), "隐藏答案");
   updateSummary();
@@ -781,7 +807,7 @@ function handleAnswerChange(question) {
       updateWrongRecordForQuestion(question);
     }
     saveWrongRecords();
-    updateQuestionWrongCount(question);
+    updateWrongIndicatorsForQuestion(question);
   }
   updateSummary();
 }
@@ -812,6 +838,34 @@ function updateWrongCountBadge(badge, question) {
   const text = wrongCountText(question);
   badge.textContent = text;
   badge.hidden = !text;
+}
+
+function createManualWrongButton(question) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "manual-wrong-toggle";
+  button.dataset.wrongKey = wrongRecordKey(question);
+  button.addEventListener("click", () => toggleManualWrongRecord(question));
+  updateManualWrongButton(button, question);
+  return button;
+}
+
+function updateManualWrongButton(button, question) {
+  const added = Boolean(getWrongRecord(question));
+  button.classList.toggle("active", added);
+  button.setAttribute("aria-pressed", String(added));
+  button.title = added ? "从错题本移除" : "加入错题本";
+  button.textContent = "";
+  button.append(iconBookmark(), added ? "移出错题" : "加入错题");
+}
+
+function updateManualWrongButtons(question) {
+  const key = wrongRecordKey(question);
+  document.querySelectorAll(".manual-wrong-toggle").forEach((button) => {
+    if (button.dataset.wrongKey === key) {
+      updateManualWrongButton(button, question);
+    }
+  });
 }
 
 function toggleAnswers() {
@@ -868,6 +922,7 @@ function clearWrongRecords() {
   }
   state.wrongRecords = {};
   saveWrongRecords();
+  refreshVisibleWrongIndicators();
   if (state.paperMode === "wrong") {
     state.paperMode = "practice";
     updatePaperModeControls();
@@ -1000,9 +1055,10 @@ function renderBankQuestion(question, number) {
   wrongCount.className = "bank-wrong-count";
   wrongCount.textContent = wrongCountText(question);
   wrongCount.hidden = !wrongCount.textContent;
+  const manualWrongButton = createManualWrongButton(question);
   const id = document.createElement("span");
   id.textContent = `ID ${question.id}`;
-  meta.append(type, wrongCount, result, id);
+  meta.append(type, wrongCount, manualWrongButton, result, id);
 
   const title = document.createElement("h2");
   title.textContent = question.question;
@@ -1073,7 +1129,7 @@ function handleBankAnswerChange(question) {
     updateWrongRecordForBankQuestion(question);
     saveWrongRecords();
     updateBankQuestionResult(question);
-    updateBankQuestionWrongCount(question);
+    updateWrongIndicatorsForQuestion(question);
   }
   updateSummary();
 }
@@ -1092,7 +1148,7 @@ function checkBankAnswers() {
   state.bankAnswersVisible = true;
   updateWrongRecordsFromBank();
   state.bankRenderedQuestions.forEach(updateBankQuestionResult);
-  state.bankRenderedQuestions.forEach(updateBankQuestionWrongCount);
+  state.bankRenderedQuestions.forEach(updateWrongIndicatorsForQuestion);
   updateBankAnswerControls();
   updateSummary();
   restoreViewportAnchor(anchor);
@@ -1161,6 +1217,12 @@ function iconShuffle() {
 function iconList() {
   const wrapper = document.createElement("span");
   wrapper.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>';
+  return wrapper.firstChild;
+}
+
+function iconBookmark() {
+  const wrapper = document.createElement("span");
+  wrapper.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/></svg>';
   return wrapper.firstChild;
 }
 
